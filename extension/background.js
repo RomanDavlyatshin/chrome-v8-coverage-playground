@@ -1,7 +1,16 @@
+chrome.webNavigation.onBeforeNavigate.addListener((params) => cleanTabParsedSources(params.tabId));
+
 setupRuntimeMessageListener(handleRuntimeRequests);
 
 async function handleRuntimeRequests (request) {
   switch (request.action) {
+    case 'getParsedScriptsUrls':
+      return getParsedScriptsUrls(request.tab);
+
+    case 'setTargetScriptUrl':
+      setTargetScriptUrl(request.payload);
+      break;
+
     case 'attachDevTools':
       await attachDevTools(request.tab);
       break;
@@ -13,7 +22,7 @@ async function handleRuntimeRequests (request) {
       break;
     case 'takePreciseCoverage': {
       const data = await takePreciseCoverage(request.tab);
-      printRangeCoverage(data);
+      printRangeCoverage(data, sources[request.tab.id]);
       break;
     }
     case 'stopPreciseCoverage':
@@ -36,6 +45,7 @@ async function handleRuntimeRequests (request) {
       await disableDebugger(request.tab);
       break;
   }
+
   console.log(request.action, 'done!');
 }
 
@@ -99,10 +109,18 @@ const enableDebugger = async (tab) => {
 }
 
 const sources = {};
+
+function cleanTabParsedSources(tabId) {
+  delete sources[tabId];
+}
+
 const addScriptParsedListener = async (tab) => {
   const target = {
     tabId: tab.id
   };
+  if (!sources[tab.id]) {
+    sources[tab.id] = {};
+  }
   chrome.debugger.onEvent.addListener(async (_, method, params) => {
     if (method !== 'Debugger.scriptParsed') {
       return;
@@ -111,41 +129,105 @@ const addScriptParsedListener = async (tab) => {
     const { url, scriptId } = params;
     if (!url) return;
 
+    console.log('script parsed', url);
+
     const source = await devTools.sendCommand(target, 'Debugger.getScriptSource', { scriptId });
-    if (!sources[url]) {
-      sources[url] = {};
+    if (!sources[tab.id]) { // required because onBeforeNavigate wipes tab sources
+      sources[tab.id] = {};
     }
-    sources[url][scriptId] = source;
+    if (!sources[tab.id][url]) {
+      sources[tab.id][url] = {};
+    }
+    sources[tab.id][url][scriptId] = source;
   });
 }
 
-function printRangeCoverage(data) {
+function getParsedScriptsUrls(tab) {
+  const urls = sources[tab.id] && Object.keys(sources[tab.id]);
+  if (!urls) throw new Error('No parsed sources. Execute addScriptParsedListener & enableDebugger first!')
+  if (urls.length === 0) throw new Error(`No scripts were parsed for tab: tabId: ${tab.id} url ${tab.url}`);
+  return urls;
+}
+
+let targetScriptUrl;
+function setTargetScriptUrl(value) {
+  targetScriptUrl = value;
+}
+
+function printRangeCoverage(data, tabSources) {
   if (!data || !data.result || data.result.length === 0) {
-    const msg = 'No coverage to print. Try to perform some actions on the target tab!';
-    console.error(msg);
+    console.error('No coverage to print. Try to perform some actions on the target tab!');
+    return;
   }
-  data.result.forEach((x) => {
+  const filtered = targetScriptUrl ? data.result.filter(x => x.url === targetScriptUrl) : data.result;
+  
+  if (filtered.length === 0) {
+    console.error('No coverage for scripts from target url', targetScriptUrl);
+    return;
+  }
+
+  filtered.forEach((x) => {
     const { scriptId, functions, url } = x;
-    if (!sources[url]) {
+    if (!tabSources[url]) {
       console.log('sources for url', url, 'not found!');
       return;
     }
-    const source = sources[url][scriptId];
+    const source = tabSources[url][scriptId];
     if (!source) {
       console.log('source for script', scriptId, 'not found!');
       return;
     }
     console.log(`%c${url} %cscriptId: ${scriptId}`, 'color: blue; font-weight: 600;', 'color: green;');
     print(source.scriptSource, functions);
+    console.log('RAW COVERAGE', '\n', functions, '\n', 'RAW COVERAGE END')
+    // _convertToDisjointSegments(functions.reduce((a, fn) => [...a, ...fn.ranges], []));
+    // functions.forEach((fn, i) => console.log(`fn #${i} name: ${fn.name}`, fn.ranges))
   });
+}
+
+function _convertToDisjointSegments(ranges, stamp) {
+  ranges.sort((a, b) => a.startOffset - b.startOffset);
+
+  const result = [];
+  const stack = [];
+  for (const entry of ranges) {
+    let top = stack[stack.length - 1];
+    while (top && top.endOffset <= entry.startOffset) {
+      append(top.endOffset, top.count);
+      stack.pop();
+      top = stack[stack.length - 1];
+    }
+    append(entry.startOffset, top ? top.count : 0);
+    stack.push(entry);
+  }
+
+  for (let top = stack.pop(); top; top = stack.pop()) {
+    append(top.endOffset, top.count);
+  }
+
+  function append(end, count) {
+    const last = result[result.length - 1];
+    if (last) {
+      if (last.end === end) {
+        return;
+      }
+      if (last.count === count) {
+        last.end = end;
+        return;
+      }
+    }
+    result.push({end: end, count: count, stamp: stamp});
+  }
+
+  return result;
 }
 
 function print(rawSource, v8coverage) {
   let highlightedSource = rawSource;
 
   const cssUnset = 'background-color: unset;';
-  const cssCovered = 'background-color: green;';
-  const cssNotCovered = 'background-color: red;';
+  const cssCovered = 'background-color: rgba(0, 255, 0, 0.1);';
+  const cssNotCovered = 'background-color: rgba(255, 0, 0, 0.12);';
 
   let styles = [cssUnset];
   let injectOffset = 2;

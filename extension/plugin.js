@@ -12,30 +12,35 @@ async function sendMessage(message) {
 }
 
 let counter = 1;
-function addAction(name, prefix) {
-  const message = document.getElementById("message");
+function addAction(action, prefix, callback) {
   const contentPane = document.getElementById("content-pane");
   const button = document.createElement('button');
   contentPane.appendChild(button);
-  button.textContent = name;
+  button.textContent = action;
   button.style = 'margin: 7px;';
   if (prefix) {
     button.textContent = `${prefix}.${button.textContent}`;
     button.style = 'margin: 7px; font-weight: 600;';
   }
-  button.addEventListener('click', () => {
-    message.textContent = name + ' in process';
-    chrome.tabs.getSelected(null, async (tab) => {
-      try {
-        await sendMessage({ "action": name, "tab": tab });
-        message.textContent = name + ' done!';
-        message.style = 'color: green';
-      } catch (e) {
-        message.textContent = `${name} - error: ${e.message || 'something bad happened'}`;
-        message.style = 'color: red';
+  button.addEventListener('click', () => executeAction(action, '', callback), false)
+}
+
+async function executeAction(action, payload, callback) {
+  const message = document.getElementById("message");
+  message.textContent = action + ' in process';
+  chrome.tabs.query({ active: true }, async (activeTabs) => {
+    try {
+      const result = await sendMessage({ action: action, payload, tab: activeTabs[0] });
+      if (callback) {
+        callback(result);
       }
-    });
-  }, false )
+      message.textContent = action + ' done!';
+      message.style = 'color: green';
+    } catch (e) {
+      message.textContent = `${action} - error: ${e.message || 'something bad happened'}`;
+      message.style = 'color: red';
+    }
+  });
 }
 
 function addDelimiter(text) {
@@ -44,6 +49,18 @@ function addDelimiter(text) {
   elem.style = 'margin-top: 15px;';
   const contentPane = document.getElementById("content-pane");
   contentPane.appendChild(elem);
+}
+
+function addElement(parentId, type, attributes) {
+  const elem = document.createElement(type);
+  for (const attr in attributes) {
+    if (Object.hasOwnProperty.call(attributes, attr)) {
+      elem[attr] = attributes[attr];
+    }
+  }
+  const parent = document.getElementById(parentId);
+  parent.appendChild(elem);
+  return elem;
 }
 
 function addSubtitle(text) {
@@ -55,6 +72,22 @@ function addSubtitle(text) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  addDelimiter('Options');
+
+  addElement('content-pane', 'span', { textContent: 'Select target script url:' });
+  const select = addElement('content-pane', 'select', { id: 'targetScriptUrl', style: 'max-width: 100%' });
+  select.addEventListener('change', function (e) {
+    executeAction('setTargetScriptUrl', e.target.value);
+  });
+
+  addElement('targetScriptUrl', 'option', { value: '', text: 'none (print all)' });
+
+  addAction('getParsedScriptsUrls', '', function (data) {
+    data.forEach(function(url) {
+      addElement('targetScriptUrl', 'option', { value: url, text: url });
+    })
+  });
+
   addDelimiter('Dev Tools');
   addAction('attachDevTools', 1);
   addAction('detachDevTools');

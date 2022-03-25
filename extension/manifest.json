@@ -2,7 +2,14 @@
   "name": "V8 Coverage Playground",
   "description": "",
   "version": "0.1",
-  "permissions": ["debugger", "*://*/coverage", "storage"],
+  "permissions": [
+    "debugger", "*://*/coverage", "storage", "webNavigation", "tabs",
+      "webRequest",
+      "webRequestBlocking",
+      "activeTab",
+      "debugger",
+      "*://*/*"
+  ],
   "background": {
     "scripts": ["background.js"]
   },
