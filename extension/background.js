@@ -1,19 +1,28 @@
-chrome.webNavigation.onBeforeNavigate.addListener((params) => cleanTabParsedSources(params.tabId));
+if (!chrome.webNavigation.onBeforeNavigate.hasListeners()) {
+  chrome.webNavigation.onBeforeNavigate.addListener((params) => cleanTabParsedSources(params.tabId));
+}
 
 setupRuntimeMessageListener(handleRuntimeRequests);
 
 async function handleRuntimeRequests (request) {
+  console.log('REQUEST TAB ID', request.tab.id);
   switch (request.action) {
+    // MISC
     case 'getParsedScriptsUrls':
       return getParsedScriptsUrls(request.tab);
-
     case 'setTargetScriptUrl':
       setTargetScriptUrl(request.payload);
       break;
 
+    // DevTools Connection
     case 'attachDevTools':
       await attachDevTools(request.tab);
       break;
+    case 'detachDevTools':
+      await detachDevTools(request.tab);
+      break;
+
+    // Profiler
     case 'enableProfiler':
       await enableProfiler(request.tab);
       break;
@@ -31,15 +40,27 @@ async function handleRuntimeRequests (request) {
     case 'disableProfiler':
       await disableProfiler(request.tab);
       break;
-    case 'detachDevTools':
-      await detachDevTools(request.tab);
-      break;
 
+    // Network
+    case 'enableNetwork':
+      await enableNetwork(request.tab);
+      break;
+    case 'setCacheDisabled':
+      await setCacheDisabled(request.tab);
+      break;
+    case 'disableNetwork':
+      await disableNetwork(request.tab);
+      break;
+    
+    // Debugger
     case 'enableDebugger':
       await enableDebugger(request.tab);
       break;
     case 'addScriptParsedListener':
       await addScriptParsedListener(request.tab);
+      break;
+    case 'removeScriptParsedListener':
+      await removeScriptParsedListener(request.tab);
       break;
     case 'disableDebugger':
       await disableDebugger(request.tab);
@@ -108,10 +129,38 @@ const enableDebugger = async (tab) => {
   await devTools.sendCommand(target, "Debugger.enable"); 
 }
 
+const enableNetwork = async (tab) => {
+  const target = {
+    tabId: tab.id
+  };
+  await devTools.sendCommand(target, "Network.enable");
+}
+const disableNetwork = async (tab) => {
+  const target = {
+    tabId: tab.id
+  };
+  await devTools.sendCommand(target, "Network.disable");
+}
+const setCacheDisabled = async (tab) => {
+  const target = {
+    tabId: tab.id
+  };
+  await devTools.sendCommand(target, "Network.setCacheDisabled", { cacheDisabled: true });
+}
+
 const sources = {};
 
 function cleanTabParsedSources(tabId) {
-  delete sources[tabId];
+  // delete sources[tabId];
+  console.log('CLEAN TAB PARSED SOURCES', tabId);
+  sources[tabId] = {};
+}
+
+const listeners = {};
+const removeScriptParsedListener = async (tab) => {
+  if (!listeners[tab.id]) throw new Error(`tab ${tab.is} has no listeners`);
+  listeners[tab.id].forEach(listener => chrome.debugger.onEvent.removeListener(listener));
+  listeners[tab.id] = [];
 }
 
 const addScriptParsedListener = async (tab) => {
@@ -119,9 +168,17 @@ const addScriptParsedListener = async (tab) => {
     tabId: tab.id
   };
   if (!sources[tab.id]) {
+    console.log('addScriptParsedListener - CREATING OBJECT - sources[tab.id] for tab', tab.id);
     sources[tab.id] = {};
   }
-  chrome.debugger.onEvent.addListener(async (_, method, params) => {
+
+  if (!listeners[tab.id]) {
+    listeners[tab.id] = [];
+  }
+
+  if (listeners[tab.id].length > 0) throw new Error(`tab ${tab.id} already has a listener`)
+
+  const listener = async (_, method, params) => {
     if (method !== 'Debugger.scriptParsed') {
       return;
     }
@@ -132,14 +189,16 @@ const addScriptParsedListener = async (tab) => {
     console.log('script parsed', url);
 
     const source = await devTools.sendCommand(target, 'Debugger.getScriptSource', { scriptId });
-    if (!sources[tab.id]) { // required because onBeforeNavigate wipes tab sources
-      sources[tab.id] = {};
-    }
+    // if (!sources[tab.id]) { // required because onBeforeNavigate wipes tab sources
+    //   sources[tab.id] = {};
+    // }
     if (!sources[tab.id][url]) {
       sources[tab.id][url] = {};
     }
     sources[tab.id][url][scriptId] = source;
-  });
+  }
+  listeners[tab.id].push(listener);
+  chrome.debugger.onEvent.addListener(listener);
 }
 
 function getParsedScriptsUrls(tab) {
@@ -338,6 +397,8 @@ function mergeRange(successiveRanges, newRange) {
 const devTools = {
   attach(target) {
     const DEBUGGER_VERSION = "1.3";
+    // chrome.debugger.onEvent
+    
     return promisifyBrowserApiCall(chrome.debugger.attach, target, DEBUGGER_VERSION);
   },
 

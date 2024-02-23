@@ -3,26 +3,27 @@
 	<head>
 		<meta charset="utf-8">
 		<title>Sample</title>
-		<script>
-			let callCounter = 0;
-			function sample () {
-					alert('Sample function called');
-					switch (callCounter) {
-							case 0:
-									alert('first time');
-									break;
-							case 1:
-									alert('second time');
-									break;
-							default:
-									alert(callCounter + 1 + "d time (but since 3d one its the same code branch)");
-									break;
-					};
-					callCounter++;
-			};
-		</script>
+		<script src="./example.js"></script>
+		<!-- <script>
+			// let callCounter = 0;
+			// function sample () {
+			// 		alert('Sample function called');
+			// 		switch (callCounter) {
+			// 				case 0:
+			// 						alert('first time');
+			// 						break;
+			// 				case 1:
+			// 						alert('second time');
+			// 						break;
+			// 				default:
+			// 						alert(callCounter + 1 + "d time (but since 3d one its the same code branch)");
+			// 						break;
+			// 		};
+			// 		callCounter++;
+			// };
+		</script> -->
 	</head>
 	<body>
-		<button class="custom-button" onclick="sample()">Trigger sample function</button>
+		<button class="custom-button" onclick="sample().get()">Trigger sample function</button>
 	</body>
 </html>

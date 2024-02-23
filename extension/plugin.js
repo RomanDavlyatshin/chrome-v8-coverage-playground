@@ -72,40 +72,43 @@ function addSubtitle(text) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  addDelimiter('Options');
+  addDelimiter('Dev Tools');
+  addAction('attachDevTools', 1);
+  
+  // Network
+  addDelimiter('Network')
+  addAction('enableNetwork', 2);
+  addAction('setCacheDisabled', 3);
 
-  addElement('content-pane', 'span', { textContent: 'Select target script url:' });
-  const select = addElement('content-pane', 'select', { id: 'targetScriptUrl', style: 'max-width: 100%' });
-  select.addEventListener('change', function (e) {
-    executeAction('setTargetScriptUrl', e.target.value);
-  });
+  // Debugger
+  addDelimiter('Debugger')
+  addAction('addScriptParsedListener', 4);
+  addAction('enableDebugger', 5);
 
-  addElement('targetScriptUrl', 'option', { value: '', text: 'none (print all)' });
-
+  // Script urls
+  addDelimiter('Pick the script to print coverage for')
   addAction('getParsedScriptsUrls', '', function (data) {
     data.forEach(function(url) {
       addElement('targetScriptUrl', 'option', { value: url, text: url });
     })
   });
-
-  addDelimiter('Dev Tools');
-  addAction('attachDevTools', 1);
-  addAction('detachDevTools');
-
-  addDelimiter('Profiler');
-  addAction('enableProfiler', 4);
-  addAction('disableProfiler');
-
-  addDelimiter('Coverage');
-  addAction('startPreciseCoverage', 5);
-  addSubtitle('Press takePreciseCoverage button to take coverage "snapshot"');
-  addSubtitle('Try doing something on the page and press takePreciseCoverage between actions');
-  addSubtitle('You can reload application page, that will not stop coverage recording');
-  addAction('takePreciseCoverage');
-  addAction('stopPreciseCoverage');
+  const select = addElement('content-pane', 'select', { id: 'targetScriptUrl', style: 'max-width: 100%' });
+  select.addEventListener('change', function (e) {
+    executeAction('setTargetScriptUrl', e.target.value);
+  });
+  addElement('targetScriptUrl', 'option', { value: '', text: 'none (print all)' });
+    
   
-  addDelimiter('Debugger');
-  addAction('enableDebugger', 3);
-  addAction('addScriptParsedListener', 2);
+  addDelimiter('Profiler')
+  addAction('enableProfiler', 6);
+  addAction('startPreciseCoverage', 7);
+  addAction('takePreciseCoverage', 8);
+  addAction('stopPreciseCoverage');
+
+  addDelimiter('Disable & remove everything')
+  addAction('disableProfiler');
   addAction('disableDebugger');
+  addAction('disableNetwork');
+  addAction('detachDevTools');
+  addAction('removeScriptParsedListener');
 }, false)
